@@ -177,7 +177,7 @@ func (rsw RatelimitSlidingWindow) RateLimit(sender string, recips int) string {
 		return "action=dunno\n\n" // permit whitelisted sender
 	}
 	if rsw.checkWhiteList(domain) {
-		rsw.logger.Println("Allowing whitelisted domain:", domain)
+		rsw.logger.Println("Allowing whitelisted domain:", domain, "for sender:", sender)
 		return "action=dunno\n\n" // permit whitelisted domain
 	}
 	if rsw.checkDomain(domain) {
@@ -200,8 +200,35 @@ func (rsw RatelimitSlidingWindow) RateLimit(sender string, recips int) string {
 
 	token.RecordMessage(now, recips)
 
-	rsw.logger.Println("Message accepted from", sender, "recipients", recips, "current", token.Count(), "limit", messagelimit)
+	rsw.logger.Println("Message accepted from", sender, "recipients", recips, "current", token.Count(), "limit", messagelimit, "[", rsw.tokens.len(), "]")
 	return "action=dunno\n\n"
+}
+
+// Report will log a statistics report
+func (rsw RatelimitSlidingWindow) Report() {
+	rsw.mu.Lock()
+	defer rsw.mu.Unlock()
+
+	allslices := 0
+	allcount := 0
+	tok := rsw.tokens.tokens
+
+	for _, val := range tok {
+		allslices += val.sliceCount
+		allcount += val.Count()
+	}
+
+	avg := allslices
+	avgm := allcount
+	toks := rsw.tokens.len()
+	if toks > 0 { // avoid division by zero
+		avg = allslices/toks
+		avgm = allcount/toks
+	}
+
+	rsw.logger.Println("We currently have", allslices, "slices in", toks, "tokens, that is an average of", avg, "slices per token")
+	rsw.logger.Println("Also we have", allcount, "messages in", toks, "tokens, that is an average of", avgm, "messages per token")
+
 }
 
 // AddToken adds a new token to a RatelimitTokenMap
@@ -223,6 +250,10 @@ func (rlm RatelimitTokenMap) Token(k string) *RatelimitToken {
 		rlm.tokens[k] = t
 		return t
 	}
+}
+
+func (rlm RatelimitTokenMap) len() int {
+	return len(rlm.tokens)
 }
 
 // Key returns the key of a RatelimitToken
