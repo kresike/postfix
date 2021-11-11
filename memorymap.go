@@ -30,7 +30,7 @@ func (m *MemoryMap) Get(k string) (value string, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	value, ok := m.v[k]
-	if ok != true {
+	if !ok {
 		return "", fmt.Errorf("Key not found")
 	}
 	return value, nil

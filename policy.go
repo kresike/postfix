@@ -16,7 +16,6 @@ func NewPolicy() *Policy {
 /*SetAttribute is a setter function for the Policy structure */
 func (pp Policy) SetAttribute(key, value string) {
 	pp.attributes[key] = value
-	return
 }
 
 /*Attribute is a getter function for the Policy structure */

@@ -15,14 +15,14 @@ func Load(filename string) *MemoryMap {
 		return nil
 	}
 	defer f.Close()
-	c := 0;
+	c := 0
 	s := bufio.NewScanner(f)
 	res := NewMemoryMap()
 	for s.Scan() {
-		c++;
+		c++
 		t := strings.Fields(s.Text())
 		if len(t) != 2 {
-			panic(fmt.Errorf("Cannot parse file content of %s at line %d: %s",filename,c,t));
+			panic(fmt.Errorf("cannot parse file content of %s at line %d: %s", filename, c, t))
 		}
 		res.Add(t[0], t[1])
 	}

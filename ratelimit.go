@@ -1,14 +1,14 @@
 package postfix
 
 import (
+	"bufio"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"os"
-	"bufio"
 )
 
 // RatelimitToken holds data for one sender about the amount of recently sent mails and is protected by a mutex
@@ -32,7 +32,7 @@ type RatelimitTokenMap struct {
 type RatelimitSlidingWindow struct {
 	mu           sync.Mutex
 	defaultLimit int
-	deferMessage string "rate limit exceeded"
+	deferMessage string
 	interval     time.Duration
 	whiteList    *MemoryMap
 	domainList   *MemoryMap
@@ -44,6 +44,7 @@ type RatelimitSlidingWindow struct {
 func NewRatelimitSlidingWindow(w, d *MemoryMap, t *RatelimitTokenMap) *RatelimitSlidingWindow {
 	var rsw RatelimitSlidingWindow
 	rsw.defaultLimit = 120
+	rsw.deferMessage = "rate limit exceeded"
 	rsw.whiteList = w
 	rsw.domainList = d
 	rsw.tokens = t
@@ -129,21 +130,21 @@ func (rsw *RatelimitSlidingWindow) SetDomainList(d *MemoryMap) {
 	rsw.domainList = d
 }
 
-func (rsw RatelimitSlidingWindow) checkWhiteList(k string) bool {
+func (rsw *RatelimitSlidingWindow) checkWhiteList(k string) bool {
 	if _, err := rsw.whiteList.Get(k); err != nil {
 		return false
 	}
 	return true
 }
 
-func (rsw RatelimitSlidingWindow) checkDomain(k string) bool {
+func (rsw *RatelimitSlidingWindow) checkDomain(k string) bool {
 	if _, err := rsw.domainList.Get(k); err != nil {
 		return false
 	}
 	return true
 }
 
-func (rsw RatelimitSlidingWindow) getDomainLimit(dom string) int {
+func (rsw *RatelimitSlidingWindow) getDomainLimit(dom string) int {
 	d, err := rsw.domainList.Get(dom)
 	if err != nil {
 		rsw.logger.Println("Failed to get domain data for:", dom)
@@ -158,7 +159,7 @@ func (rsw RatelimitSlidingWindow) getDomainLimit(dom string) int {
 }
 
 // RateLimit checks whether a sender can send the message and returns the appropriate postfix policy action string
-func (rsw RatelimitSlidingWindow) RateLimit(sender string, recips int) string {
+func (rsw *RatelimitSlidingWindow) RateLimit(sender string, recips int) string {
 	rsw.mu.Lock()
 	defer rsw.mu.Unlock()
 	elems := strings.Split(sender, "@")
@@ -207,7 +208,7 @@ func (rsw RatelimitSlidingWindow) RateLimit(sender string, recips int) string {
 }
 
 // Report will log a statistics report
-func (rsw RatelimitSlidingWindow) Report() {
+func (rsw *RatelimitSlidingWindow) Report() {
 	rsw.mu.Lock()
 	defer rsw.mu.Unlock()
 
@@ -224,8 +225,8 @@ func (rsw RatelimitSlidingWindow) Report() {
 	avgm := allcount
 	toks := rsw.tokens.len()
 	if toks > 0 { // avoid division by zero
-		avg = allslices/toks
-		avgm = allcount/toks
+		avg = allslices / toks
+		avgm = allcount / toks
 	}
 
 	rsw.logger.Println("We currently have", allslices, "slices in", toks, "tokens, that is an average of", avg, "slices per token")
@@ -234,14 +235,14 @@ func (rsw RatelimitSlidingWindow) Report() {
 }
 
 // AddToken adds a new token to a RatelimitTokenMap
-func (rlm RatelimitTokenMap) AddToken(t *RatelimitToken) {
+func (rlm *RatelimitTokenMap) AddToken(t *RatelimitToken) {
 	rlm.mu.Lock()
 	defer rlm.mu.Unlock()
 	rlm.tokens[t.Key()] = t
 }
 
 // Token returns a token from a RatelimitTokenMap
-func (rlm RatelimitTokenMap) Token(k string) *RatelimitToken {
+func (rlm *RatelimitTokenMap) Token(k string) *RatelimitToken {
 	rlm.mu.Lock()
 	defer rlm.mu.Unlock()
 	if t, ok := rlm.tokens[k]; ok {
@@ -254,7 +255,7 @@ func (rlm RatelimitTokenMap) Token(k string) *RatelimitToken {
 	}
 }
 
-func (rlm RatelimitTokenMap) localtoken(k string) *RatelimitToken {
+func (rlm *RatelimitTokenMap) localtoken(k string) *RatelimitToken {
 	if t, ok := rlm.tokens[k]; ok {
 		return t
 	} else {
@@ -264,7 +265,7 @@ func (rlm RatelimitTokenMap) localtoken(k string) *RatelimitToken {
 		return t
 	}
 }
-func (rlm RatelimitTokenMap) len() int {
+func (rlm *RatelimitTokenMap) len() int {
 	return len(rlm.tokens)
 }
 
@@ -282,7 +283,7 @@ func (rsw *RatelimitSlidingWindow) LoadTokens(filename string) bool {
 	return rsw.tokens.LoadFile(filename)
 }
 
-func (rlm RatelimitTokenMap) Serialize(filename string) bool {
+func (rlm *RatelimitTokenMap) Serialize(filename string) bool {
 	rlm.mu.Lock()
 	defer rlm.mu.Unlock()
 
@@ -295,15 +296,15 @@ func (rlm RatelimitTokenMap) Serialize(filename string) bool {
 
 	bcount, err := f.WriteString(rlm.String())
 	if err != nil {
-		panic(fmt.Errorf("Failed to write to %s: %s", filename, err))
+		panic(fmt.Errorf("failed to write to %s: %s", filename, err))
 	}
 
-	rlm.logger.Println("Saved memory content to",filename,".",bcount,"bytes written.");
+	rlm.logger.Println("Saved memory content to", filename, ".", bcount, "bytes written.")
 
 	return true
 }
 
-func (rlm RatelimitTokenMap) LoadFile(filename string) bool {
+func (rlm *RatelimitTokenMap) LoadFile(filename string) bool {
 	rlm.mu.Lock()
 	defer rlm.mu.Unlock()
 
@@ -322,18 +323,18 @@ func (rlm RatelimitTokenMap) LoadFile(filename string) bool {
 		text := scanner.Text()
 		elems := strings.Split(text, ">")
 		if len(elems) != 2 {
-			rlm.logger.Println("Failed to parse file contents at line", counter);
+			rlm.logger.Println("Failed to parse file contents at line", counter)
 			continue
 		}
 		key := elems[0]
-		tokens := strings.Split(elems[1],"#")
+		tokens := strings.Split(elems[1], "#")
 		for _, token := range tokens {
 			if len(token) < 1 {
 				continue
 			}
-			d := strings.Split(token,"/")
+			d := strings.Split(token, "/")
 			if len(d) != 2 {
-				rlm.logger.Println("Failed to parse token", token, "for key", key, "at line", counter);
+				rlm.logger.Println("Failed to parse token", token, "for key", key, "at line", counter)
 				continue
 			}
 			ts := d[0]
@@ -341,25 +342,25 @@ func (rlm RatelimitTokenMap) LoadFile(filename string) bool {
 			token := rlm.localtoken(key)
 			timestamp, err := time.Parse(time.UnixDate, ts)
 			if err != nil {
-				rlm.logger.Println("Failed to parse timestamp:",ts,err.Error())
+				rlm.logger.Println("Failed to parse timestamp:", ts, err.Error())
 				continue
 			}
 			mcnt, err := strconv.Atoi(cnt)
 			if err != nil {
-				rlm.logger.Println("Failed to parse integer:",cnt,err.Error())
+				rlm.logger.Println("Failed to parse integer:", cnt, err.Error())
 				continue
 			}
-			token.RecordMessage(timestamp,mcnt)
+			token.RecordMessage(timestamp, mcnt)
 		}
 	}
 
 	return true
 }
 
-func (rlm RatelimitTokenMap) String() string {
+func (rlm *RatelimitTokenMap) String() string {
 	var s string
 	for _, v := range rlm.tokens {
-		s = fmt.Sprintf("%s%s>%s\n",s,v.key,v)
+		s = fmt.Sprintf("%s%s>%s\n", s, v.key, v)
 	}
 	return s
 }
@@ -413,7 +414,7 @@ func (rlt *RatelimitToken) String() string {
 	//s := fmt.Sprintf("RatelimitToken: %s count %d slices %d", rlt.key, rlt.count, rlt.sliceCount)
 	var s string
 	for k, v := range rlt.tsd {
-		s = fmt.Sprintf("%s%s/%d#",s,k.Format(time.UnixDate),v)
+		s = fmt.Sprintf("%s%s/%d#", s, k.Format(time.UnixDate), v)
 	}
 	return s
 }
