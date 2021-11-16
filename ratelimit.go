@@ -218,8 +218,10 @@ func (rsw *RatelimitSlidingWindow) Report() {
 
 	rsw.tokens.mu.Lock()
 	for _, val := range tok {
+		val.mu.Lock()
 		allslices += val.sliceCount
 		allcount += val.Count()
+		val.mu.Unlock()
 	}
 	rsw.tokens.mu.Unlock()
 
